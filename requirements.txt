@@ -1,7 +1,12 @@
 # PyTorch: install the CUDA build that matches your driver/runtime, e.g.:
 #   pip install torch --index-url https://download.pytorch.org/whl/cu124
+pip>=24.0
+setuptools>=65.0
+wheel>=0.40.0
+packaging>=23.0
+ninja>=1.11.0
 torch>=2.2.0
-transformers>=4.40.0
+transformers>=4.43.0
 accelerate>=0.30.0
 datasets>=2.19.0
 sentencepiece>=0.2.0

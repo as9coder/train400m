@@ -18,6 +18,7 @@ DeepSeek-style inspirations applied here (without MoE/MLA/FP8 infra):
 from __future__ import annotations
 
 import argparse
+import inspect
 import math
 import os
 import queue
@@ -40,6 +41,35 @@ from transformers import (
     SchedulerType,
     get_scheduler,
 )
+
+
+def _apply_attn_implementation(config: LlamaConfig, impl: str) -> Dict[str, Any]:
+    """
+    Transformers versions differ: some need attn on LlamaConfig only, some accept LlamaForCausalLM(..., attn_implementation=).
+    """
+    if hasattr(config, "attn_implementation"):
+        config.attn_implementation = impl
+    elif hasattr(config, "update"):
+        try:
+            config.update({"attn_implementation": impl})
+        except Exception:
+            pass
+    init_kw: Dict[str, Any] = {}
+    try:
+        if "attn_implementation" in inspect.signature(LlamaForCausalLM.__init__).parameters:
+            init_kw["attn_implementation"] = impl
+    except (TypeError, ValueError):
+        pass
+    return init_kw
+
+
+def _from_pretrained_attn_kw(impl: str) -> Dict[str, Any]:
+    try:
+        if "attn_implementation" in inspect.signature(LlamaForCausalLM.from_pretrained).parameters:
+            return {"attn_implementation": impl}
+    except (TypeError, ValueError):
+        pass
+    return {}
 
 
 def _configure_cuda_performance() -> None:
@@ -471,16 +501,16 @@ def main() -> None:
         max_position_embeddings=args.block_size,
     )
 
-    attn_kwargs: Dict[str, Any] = {"attn_implementation": args.attn_implementation}
+    init_attn = _apply_attn_implementation(config, args.attn_implementation)
 
     if args.resume_from_checkpoint:
         model = LlamaForCausalLM.from_pretrained(
             args.resume_from_checkpoint,
             torch_dtype=torch.bfloat16 if args.bf16 else None,
-            **attn_kwargs,
+            **_from_pretrained_attn_kw(args.attn_implementation),
         )
     else:
-        model = LlamaForCausalLM(config, **attn_kwargs)
+        model = LlamaForCausalLM(config, **init_attn)
 
     if not args.disable_gradient_checkpointing:
         model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
