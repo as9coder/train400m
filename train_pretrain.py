@@ -692,7 +692,16 @@ def main() -> None:
                 aux_hidden: List[Optional[torch.Tensor]] = [None]
 
                 def _hook(_mod: Any, _inp: Any, out: Any) -> None:
-                    aux_hidden[0] = out[0]
+                    # Decoder layer may return a bare [B,T,H] tensor or (hidden_states, ...).
+                    # Never use out[0] on a 3D tensor — that wrongly takes batch index 0 -> [T,H].
+                    if isinstance(out, torch.Tensor):
+                        aux_hidden[0] = out
+                    elif isinstance(out, (tuple, list)) and len(out) > 0:
+                        aux_hidden[0] = out[0]
+                    elif hasattr(out, "hidden_states"):
+                        aux_hidden[0] = out.hidden_states
+                    else:
+                        aux_hidden[0] = None
 
                 hnd = inner.model.layers[mid].register_forward_hook(_hook)
                 try:
@@ -701,7 +710,7 @@ def main() -> None:
                     hnd.remove()
 
                 loss_main = out.loss
-                if aux_hidden[0] is not None:
+                if aux_hidden[0] is not None and aux_hidden[0].dim() == 3:
                     logits_aux = inner.lm_head(inner.model.norm(aux_hidden[0]))
                     logits_f = logits_aux[:, :-1, :].contiguous()
                     labels_s = batch["labels"][:, 1:].contiguous()
