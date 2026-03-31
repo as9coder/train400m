@@ -85,6 +85,10 @@ def _configure_cuda_performance() -> None:
         torch.backends.cuda.enable_flash_sdp(True)
         torch.backends.cuda.enable_mem_efficient_sdp(True)
         torch.backends.cuda.enable_math_sdp(True)
+        # cuDNN-backed SDPA can fail on some H100/CUDA stacks with:
+        # "cuDNN Frontend error: No valid execution plans built".
+        if hasattr(torch.backends.cuda, "enable_cudnn_sdp"):
+            torch.backends.cuda.enable_cudnn_sdp(False)
     except AttributeError:
         pass
 
@@ -358,7 +362,13 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--resume_from_checkpoint", type=str, default=None)
 
     p.add_argument("--bf16", action="store_true", help="Use bf16 (recommended on A100/H100).")
-    p.add_argument("--attn_implementation", type=str, default="sdpa", choices=["sdpa", "eager", "flash_attention_2"])
+    p.add_argument(
+        "--attn_implementation",
+        type=str,
+        default="sdpa",
+        choices=["sdpa", "eager", "flash_attention_2"],
+        help="If SDPA fails with cuDNN Frontend errors on H100, use eager (slower) or install flash-attn and flash_attention_2.",
+    )
     p.add_argument("--disable_gradient_checkpointing", action="store_true")
     p.add_argument(
         "--compile",
